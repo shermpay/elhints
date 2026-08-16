@@ -106,6 +106,26 @@
 		(overlay-put ov =--overlay-kind t))
 	  )))
 
+;;; Treesitter Grammar installation
+
+(defcustom elhints-elisp-grammar-source-dir
+  nil
+  "The source directory of the tree-sitter elisp grammar."
+  :type 'directory
+  :group 'elhints)
+
+(defun elhints-ensure-grammar ()
+  "Ensure the Elisp tree-sitter grammar is available; prompt to compile if missing."
+  (interactive)
+  (unless elhints-elisp-grammar-source-dir
+	(user-error "elhints: Custom variable elhints-elisp-grammar-source-dir is set to %s;  Set it to a valid directory containing tree-sitter elisp grammar"
+				elhints-elisp-grammar-source-dir))
+  (unless (assoc 'elisp treesit-language-source-alist)
+    (add-to-list 'treesit-language-source-alist (cons 'elisp (list elhints-elisp-grammar-source-dir))))
+  (unless (treesit-language-available-p 'elisp)
+    (if (y-or-n-p "elhints: Package requires the Elisp tree-sitter grammar.  Install it now? ")
+        (treesit-install-language-grammar 'elisp)
+      (user-error "elhints: Elisp tree-sitter grammar is required"))))
 
 ;;; Core
 
@@ -138,7 +158,9 @@
   "Provide hints within Emacs Lisp code."
   :lighter nil
   (if elhints-mode
-	 (jit-lock-register #'elhints--update-hints 'contextual)
+	  (progn
+		(elhints-ensure-grammar)
+		(jit-lock-register #'elhints--update-hints 'contextual))
 	(jit-lock-unregister #'elhints--update-hints)
 	(=--remove-hints (current-buffer) (point-min) (point-max))))
 
