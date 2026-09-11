@@ -31,13 +31,14 @@
 
 (defconst elhints--overlay-kind 'elhints--overlay "The overlay property to identify elhints overlays.")
 
+(defvar-local elhints--parser nil "The buffer local Tree-sitter parser.")
+
 (cl-defstruct (elhints--arg-info (:constructor elhints--arg-info-make (start-pos name-string &key (kind 'positional))))
   start-pos name-string kind)
 
 (cl-defstruct (elhints--call-info (:constructor elhints--call-info-make))
   "Contains function call information from a parser."
   start-pos fun-symbol arg-info-list)
-
 
 (defun elhints--parse-arglist (arglist arg-positions)
   "Parse ARGLIST to a list of ELHINTS--CALL-INFO with ARG-POSITIONS."
@@ -72,27 +73,25 @@
   (let* ((treesit-thing-settings '((elisp
 									(list "list")
 									(symbol "symbol")
-									(call (and list
-											   (lambda (node)
-												 (let ((head (treesit-node-child node 1)))
-												   ;; TODO: change this definition
-												   (and (string-equal (treesit-node-type head) "symbol")
-														(functionp (intern (treesit-node-text head))))
-												   )))))))
-		 (parser (treesit-parser-create 'elisp buffer t))
+									(call (lambda (node)
+											(let ((head (treesit-node-child node 1)))
+											  ;; TODO: change this definition
+											  (and
+											   (string-equal (treesit-node-type node) "list")
+											   (string-equal (treesit-node-type head) "symbol")
+											   (functionp (intern (treesit-node-text head))))))))))
+		 (parser (or elhints--parser (treesit-parser-create 'elisp buffer)))
 		 (pos (or start (point-min)))
 		 (end (or end (point-max)))
 		 (next-node (treesit-node-at pos parser)))
-	(unwind-protect
-		(progn
-		  (while-let ((call-node (treesit-search-forward next-node 'call))
-					  (within-region (<= (treesit-node-start call-node) end)))
-			;; (message "call: %s; text: %s" call-node (treesit-node-text call-node))
-			(when (and filter-fun (funcall filter-fun call-node))
-			  (iter-yield (elhints--call-node->info call-node)))
-			(setq next-node call-node)
-			))
-	  (treesit-parser-delete parser))))
+	(progn
+	  (while-let ((call-node (treesit-search-forward next-node 'call))
+				  (within-region (<= (treesit-node-start call-node) end)))
+		;; (message "call: %s; text: %s" call-node (treesit-node-text call-node))
+		(when (and filter-fun (funcall filter-fun call-node))
+		  (iter-yield (elhints--call-node->info call-node)))
+		(setq next-node call-node)
+		))))
 
 (defun elhints--call-info-add-overlays (buffer start end call-info)
   "Add overlays to BUFFER between START and END based on CALL-INFO."
@@ -117,16 +116,15 @@
 (defun elhints-ensure-grammar ()
   "Ensure the Elisp tree-sitter grammar is available; prompt to compile if missing."
   (interactive)
-  (unless elhints-elisp-grammar-source-dir
-	(user-error "elhints: Custom variable elhints-elisp-grammar-source-dir is set to %s;  Set it to a valid directory containing tree-sitter elisp grammar"
-				elhints-elisp-grammar-source-dir))
   (unless (assoc 'elisp treesit-language-source-alist)
+	(unless elhints-elisp-grammar-source-dir
+	  (user-error "elhints: Elisp grammar is not installed and custom variable elhints-elisp-grammar-source-dir is set to %s;  Set it to a valid directory containing tree-sitter elisp grammar"
+				  elhints-elisp-grammar-source-dir))
     (add-to-list 'treesit-language-source-alist (cons 'elisp (list elhints-elisp-grammar-source-dir))))
   (unless (treesit-language-available-p 'elisp)
     (if (y-or-n-p "elhints: Package requires the Elisp tree-sitter grammar.  Install it now? ")
         (treesit-install-language-grammar 'elisp)
       (user-error "elhints: Elisp tree-sitter grammar is required"))))
-
 ;;; Core
 
 (defcustom elhints-display-min-num-args 2
@@ -160,9 +158,12 @@
   (if elhints-mode
 	  (progn
 		(elhints-ensure-grammar)
+		(setq-local elhints--parser (treesit-parser-create 'elisp (current-buffer)))
 		(jit-lock-register #'elhints--update-hints 'contextual))
 	(jit-lock-unregister #'elhints--update-hints)
-	(=--remove-hints (current-buffer) (point-min) (point-max))))
+	(=--remove-hints (current-buffer) (point-min) (point-max))
+	(treesit-parser-delete elhints--parser)
+	(setq-local elhints--parser nil)))
 
 (provide 'elhints)
 

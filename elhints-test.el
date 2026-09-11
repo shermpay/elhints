@@ -1,5 +1,4 @@
-;;; elhints-test.el --- Tests for elhints
-;; -*- lexical-binding: t; -*-
+;;; elhints-test.el --- Tests for elhints  -*- lexical-binding: t; -*-
 
 (require 'elhints)
 
