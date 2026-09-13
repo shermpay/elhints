@@ -47,14 +47,14 @@
 	  (should (eq (condition-case x
 					  (iter-next it)
 					(iter-end-of-sequence (car x)))
-				  'iter-end-of-sequence))
-	  ))
+				  'iter-end-of-sequence))))
 
   (ert-with-test-buffer (:name "two funcalls")
 	(insert "(1+ 99) (1- 100)")
 	(let ((lst))
 	  (iter-do (x (=--call-infos-iter))
 		(push x lst))
+	  (setq lst (nreverse lst))
 	  (should (equal lst
 					 (list
 					  (=--call-info-make
@@ -62,11 +62,18 @@
 					   :fun-symbol '1+
 					   :arg-info-list (list (=--arg-info-make 5 "number")))
 					  (=--call-info-make
-					   :start-pos 10
+					   :start-pos 9
 					   :fun-symbol '1-
-					   :arg-info-list (list (=--arg-info-make 14 "number")))
-					 )))))
-  )
+					   :arg-info-list (list (=--arg-info-make 13 "number"))))))))
+
+  (ert-with-test-buffer (:name "filter remove all")
+	(insert "(1+ 99) (1- 100)")
+	(let ((lst))
+	  (iter-do (x (=--call-infos-iter (current-buffer) (point-min) (point-max) (lambda (&rest args) nil)))
+		(push x lst))
+	  (setq lst (nreverse lst))
+	  (should (eq lst nil)))))
+
 
 ;; Local Variables:
 ;; read-symbol-shorthands: (("=-" . "elhints-"))

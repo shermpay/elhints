@@ -87,8 +87,9 @@
 	(progn
 	  (while-let ((call-node (treesit-search-forward next-node 'call))
 				  (within-region (<= (treesit-node-start call-node) end)))
-		;; (message "call: %s; text: %s" call-node (treesit-node-text call-node))
-		(when (and filter-fun (funcall filter-fun call-node))
+		(when (if filter-fun
+				  (funcall filter-fun call-node)
+				t)
 		  (iter-yield (elhints--call-node->info call-node)))
 		(setq next-node call-node)
 		))))
