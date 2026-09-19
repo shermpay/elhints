@@ -30,45 +30,60 @@
   "Face used for hint overlays."
   :group 'elhints)
 
-(defconst elhints--overlay-kind 'elhints--overlay "The overlay property to identify elhints overlays.")
+(defconst elhints--overlay-kind 'elhints--overlay
+  "The overlay property to identify elhints overlays.")
 
 (defvar-local elhints--parser nil "The buffer local Tree-sitter parser.")
+(defconst elhints--treesit-thing-settings
+  '((elisp
+	 (list "list")
+	 (symbol "symbol")
+	 (call elhints--call-node-p))))
 
-(cl-defstruct (elhints-arg-info (:constructor elhints-arg-info-make (start-pos name-string &key (kind 'positional))))
+(cl-defstruct (elhints-arg-info (:constructor elhints-arg-info-make (start-pos name-str value-str &key (kind 'positional))))
   "Argument info"
-  start-pos name-string kind)
+  start-pos name-str value-str kind)
 
 (cl-defstruct (elhints-call-info (:constructor elhints-call-info-make))
   "Contains function call information from a parser."
   start-pos fun-symbol arg-info-vec)
 
-(defun elhints--parse-arglist (arglist arg-positions)
-  "Parse ARGLIST to a vector of ELHINTS-ARG-INFO with ARG-POSITIONS."
+(defun elhints--parse-arglist (arglist call-node)
+  "Parse ARGLIST and CALL-NODE to a vector of ELHINTS-ARG-INFO."
+  ;; (message "arglist=%s; call-node=%s, len=%d" arglist call-node (treesit-node-child-count call-node 'named))
   (cl-flet ((next-arg-name (arg-list) (and-let* ((arg (car arg-list))) (symbol-name arg))))
-	;; TODO: Create vector directly
-	(seq-into
-	 (cl-loop
-	  with kind = 'positional
-	  for pos in arg-positions
-	  as arg-str = (next-arg-name arglist)
-	  when (string-prefix-p "&" arg-str)
-	  do
-	  (setq kind (intern (substring arg-str 1)))
-	  (setf arglist (cdr arglist))
-	  (setq arg-str (next-arg-name arglist))
-	  collect (=-arg-info-make pos arg-str :kind kind)
-	  and do (setf arglist (cdr arglist)))
-	 'vector)))
+	(cl-loop
+	 ;; subtract function node
+	 with num-args = (1- (treesit-node-child-count call-node 'named))
+	 with arg-info-vec = (make-vector num-args nil)
+	 with kind = 'positional
+	 for i from 0 below num-args
+	 ;; args don't include function node
+	 as arg-node = (treesit-node-child call-node (1+ i) 'named)
+	 as arg-list = arglist then (or (cdr arg-list) arg-list)
+	 as arg-str = (next-arg-name arg-list)
+	 when (= (aref arg-str 0) ?&)
+	 do
+	 (setq kind (intern (substring-no-properties arg-str 1)))
+	 (setf arg-list (cdr arg-list))
+	 (setq arg-str (next-arg-name arg-list))
+	 end
+	 do
+	 (let ((pos (treesit-node-start arg-node))
+		   (value-str (treesit-node-text arg-node)))
+	   (aset arg-info-vec
+			 i
+			 (=-arg-info-make pos arg-str value-str :kind kind)))
+	 finally return arg-info-vec)))
 
 
 (defun elhints--call-node->info (call-node)
   "Create ELHINTS-CALL-INFO from CALL-NODE."
   (let* ((fun-node (treesit-node-child call-node 0 'named))
 		 (fun-symbol (intern (treesit-node-text fun-node)))
-		 (arg-positions (cl-loop for i from 1 below (treesit-node-child-count call-node 'named) ; skip over function
-								 collect (treesit-node-start (treesit-node-child call-node i 'named))))
-		 (arg-info-vec (elhints--parse-arglist (help-function-arglist fun-symbol t) arg-positions)))
+		 (arg-info-vec (elhints--parse-arglist (help-function-arglist fun-symbol t) call-node)))
 	(cl-assert (string-equal (treesit-node-type fun-node) "symbol"))
+	(cl-assert (arrayp arg-info-vec))
 	(=-call-info-make :start-pos (treesit-node-start call-node)
 					   :fun-symbol fun-symbol
 					   :arg-info-vec arg-info-vec)))
@@ -84,10 +99,7 @@
 
 (iter-defun elhints--call-infos-iter (&optional buffer start end filter-fun)
   "Returns a generator that yields ELHINTS-CALL-INFO records."
-  (let* ((treesit-thing-settings '((elisp
-									(list "list")
-									(symbol "symbol")
-									(call elhints--call-node-p))))
+  (let* ((treesit-thing-settings elhints--treesit-thing-settings)
 		 (parser (or elhints--parser (treesit-parser-create 'elisp buffer)))
 		 (pos (or start (point-min)))
 		 (end (or end (point-max)))
@@ -107,7 +119,7 @@
   "Add overlays to BUFFER between START and END based on CALL-INFO."
   (seq-doseq (arg-info (=-call-info-arg-info-vec call-info))
 	(let* ((arg-pos (=-arg-info-start-pos arg-info))
-		   (arg-name (=-arg-info-name-string arg-info))
+		   (arg-name (=-arg-info-name-str arg-info))
 		   (ov (make-overlay arg-pos (+ arg-pos (length arg-name)) buffer)))
 	  ;; (message "ov: %s :: %s @ %s" arg-name (type-of arg-name) arg-pos)
 	  (when (and arg-name (<= start arg-pos end))
@@ -142,7 +154,7 @@
   :group 'lisp
   :version 31.0)
 
-(defcustom elhints-display-min-num-args 2
+(defcustom elhints-display-min-num-args 3
   "The minimum number of arguments for function calls displaying hints."
   :type 'natnum
   :group 'elhints)
@@ -153,8 +165,13 @@
 CALL-INFO is a `elhints-call-info` struct.
 
 Returns t if the CALL-INFO node should render hints."
-  (> (length (=-call-info-arg-info-vec call-info))
-	 elhints-display-min-num-args))
+  (let ((arg-info-vec (=-call-info-arg-info-vec call-info)))
+	(or (>= (length arg-info-vec)
+			elhints-display-min-num-args)
+		(cl-loop for arg-info across arg-info-vec
+				 when (member (=-arg-info-value-str arg-info)
+							  '("nil" "t"))
+				 return t))))
 
 (defcustom elhints-filter-function 'elhints-default-filter-function
   "Function that is called by elhints to filter out call nodes from hints.
