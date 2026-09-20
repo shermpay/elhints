@@ -40,9 +40,19 @@
 	 (symbol "symbol")
 	 (call elhints--call-node-p))))
 
-(cl-defstruct (elhints-arg-info (:constructor elhints-arg-info-make (start-pos name-str value-str &key (kind 'positional))))
+(cl-defstruct (elhints-arg-info
+			   (:constructor elhints-arg-info-make (start-pos
+													name-str
+													value-str
+													&key
+													(kind 'positional)
+													(show t))))
   "Argument info"
-  start-pos name-str value-str kind)
+  start-pos name-str value-str
+  (kind 'positional :read-only t :type '(member positional optional rest)
+		:documentation "The kind of argument which can be one of the symbols (POSITIONAL OPTIONAL REST)")
+  (show t :type 'boolean
+		:documentation "Whether to show or hide the hint."))
 
 (cl-defstruct (elhints-call-info (:constructor elhints-call-info-make))
   "Contains function call information from a parser."
@@ -115,17 +125,18 @@
 		(setq next-node call-node)
 		))))
 
+;; TODO: Test this?
 (defun elhints-call-info-add-overlays (buffer start end call-info)
   "Add overlays to BUFFER between START and END based on CALL-INFO."
   (seq-doseq (arg-info (=-call-info-arg-info-vec call-info))
-	(let* ((arg-pos (=-arg-info-start-pos arg-info))
-		   (arg-name (=-arg-info-name-str arg-info))
-		   (ov (make-overlay arg-pos (+ arg-pos (length arg-name)) buffer)))
-	  ;; (message "ov: %s :: %s @ %s" arg-name (type-of arg-name) arg-pos)
-	  (when (and arg-name (<= start arg-pos end))
-		(overlay-put ov 'before-string (propertize (concat arg-name ":") 'face 'elhints-hint-face))
-		(overlay-put ov =--overlay-kind t))
-	  )))
+	(when (=-arg-info-show arg-info)
+	  (let* ((arg-pos (=-arg-info-start-pos arg-info))
+			 (arg-name (=-arg-info-name-str arg-info))
+			 (ov (make-overlay arg-pos (+ arg-pos (length arg-name)) buffer)))
+		;; (message "ov: %s :: %s @ %s" arg-name (type-of arg-name) arg-pos)
+		(when (and arg-name (<= start arg-pos end))
+		  (overlay-put ov 'before-string (propertize (concat arg-name ":") 'face 'elhints-hint-face))
+		  (overlay-put ov =--overlay-kind t))))))
 
 ;;; Treesitter Grammar installation
 
@@ -162,16 +173,20 @@
 (defun elhints-default-filter-function (call-info)
   "Default function to use for option `elhints-filter-function'.
 
-CALL-INFO is a `elhints-call-info` struct.
+CALL-INFO is a `elhints-call-info' struct.
+
+This function updates the `elhints-arg-info-show' slot to nil for args that
+should be hidden.
 
 Returns t if the CALL-INFO node should render hints."
   (let ((arg-info-vec (=-call-info-arg-info-vec call-info)))
-	(or (>= (length arg-info-vec)
-			elhints-display-min-num-args)
-		(cl-loop for arg-info across arg-info-vec
-				 when (member (=-arg-info-value-str arg-info)
-							  '("nil" "t"))
-				 return t))))
+	(and (>= (length arg-info-vec)
+			 elhints-display-min-num-args)
+		 (cl-loop for arg-info across arg-info-vec
+				  when (string-equal (=-arg-info-value-str arg-info)
+									 (=-arg-info-name-str arg-info))
+				  do (setf (=-arg-info-show arg-info) nil)
+				  finally return t))))
 
 (defcustom elhints-filter-function 'elhints-default-filter-function
   "Function that is called by elhints to filter out call nodes from hints.
