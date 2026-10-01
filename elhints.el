@@ -125,18 +125,36 @@
 		(setq next-node call-node)
 		))))
 
-;; TODO: Test this?
-(defun elhints-call-info-add-overlays (buffer start end call-info)
+(defun elhints--list-buffer-overlays (buffer)
+  (with-current-buffer buffer
+	(let ((ov-list (car (overlay-lists))))
+	  (seq-filter (lambda (ov) (overlay-get ov elhints--overlay-kind))
+				  ov-list))))
+
+(defun elhints--make-overlay-with-props (beg end buffer &rest props)
+  (let ((ov (make-overlay beg end buffer)))
+	(dolist (prop-pair props)
+	  (overlay-put ov (car prop-pair) (cdr prop-pair)))
+	;; (message "make-overlay: %s => %s" ov (overlay-properties ov))
+	ov))
+
+(defun elhints--call-info-add-overlays (call-info buffer start end)
   "Add overlays to BUFFER between START and END based on CALL-INFO."
+  (declare (ftype (function (elhints-call-info
+							 buffer
+							 (or integer marker)
+							 (or integer marker))
+							t)))
+  ;; (message "elhints: add-overlays on %s between [%d, %d]" buffer start end)
   (seq-doseq (arg-info (=-call-info-arg-info-vec call-info))
 	(when (=-arg-info-show arg-info)
 	  (let* ((arg-pos (=-arg-info-start-pos arg-info))
-			 (arg-name (=-arg-info-name-str arg-info))
-			 (ov (make-overlay arg-pos (+ arg-pos (length arg-name)) buffer)))
+			 (arg-name (=-arg-info-name-str arg-info)))
 		;; (message "ov: %s :: %s @ %s" arg-name (type-of arg-name) arg-pos)
 		(when (and arg-name (<= start arg-pos end))
-		  (overlay-put ov 'before-string (propertize (concat arg-name ":") 'face 'elhints-hint-face))
-		  (overlay-put ov =--overlay-kind t))))))
+		  (=--make-overlay-with-props arg-pos (+ arg-pos (length arg-name)) buffer
+									  `(before-string . ,(propertize (concat arg-name ":") 'face 'elhints-hint-face))
+									  `(,=--overlay-kind . t)))))))
 
 ;;; Treesitter Grammar installation
 
@@ -195,11 +213,16 @@ It is called with a single argument: the `elhints-call-info'`"
   :type 'function
   :group 'elhints)
 
-(defun elhints--add-hints (buffer start end)
+
+(defun elhints-add-hints (&optional buffer start end)
   "Add hints for BUFFER between START and END."
+  (declare (ftype (function (&optional buffer integer-or-marker integer-or-marker) null)))
+  (unless buffer (setq buffer (current-buffer)))
+  (unless start (setq start (point-min)))
+  (unless end (setq end (point-max)))
   (iter-do (info (=--call-infos-iter buffer start end
-									elhints-filter-function))
-	(=-call-info-add-overlays buffer start end info)))
+									 elhints-filter-function))
+	(=--call-info-add-overlays info buffer start end)))
 
 (defun elhints--remove-hints (buffer start end)
   "Remove hints for BUFFER between START END."
@@ -210,7 +233,7 @@ It is called with a single argument: the `elhints-call-info'`"
   "Update hints for current buffer between START and END."
   (let ((buf (current-buffer)))
 	(elhints--remove-hints buf start end)
-	(elhints--add-hints buf start end)))
+	(elhints-add-hints buf start end)))
 
 (define-minor-mode elhints-mode
   "Provide hints within Emacs Lisp code."

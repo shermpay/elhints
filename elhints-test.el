@@ -9,7 +9,7 @@
 
 ;;; Code:
 
-(ert-deftest call-node->info-test ()
+(ert-deftest elhints-call-node->info-test ()
   "Test call-node->info."
   (ert-with-test-buffer (:name "1 required arg")
 	(insert "(1+ 42)")
@@ -83,7 +83,7 @@
 									   :arg-info-vec (vector (=-arg-info-make 9 "string" "\"%s\"")
 															 (=-arg-info-make 14 "objects" "42" :kind 'rest))))))))
 
-(ert-deftest call-infos-iter-test ()
+(ert-deftest elhints-call-infos-iter-test ()
   (ert-with-test-buffer (:name "no-funcall")
 	(insert "42")
 	(should (eq (condition-case condition
@@ -145,7 +145,7 @@
 	  (setq lst (nreverse lst))
 	  (should (eq lst nil)))))
 
-(ert-deftest default-filter-function-test ()
+(ert-deftest elhints-default-filter-function-test ()
   (ert-with-test-buffer (:name "skip min-num-args 2")
 	(insert "(+ 1)")
 	(let ((it (=--call-infos-iter)))
@@ -169,8 +169,29 @@
 	  (should (not (=-arg-info-show (aref arg-info-vec 1))))
 	  )))
 
+
+(ert-deftest elhints-add-hints-test ()
+  (ert-with-test-buffer (:name "simple")
+	(insert "(member x lst)")
+	(dlet (elhints-filter-function)
+	  (=-add-hints))
+	(let ((ov-list (elhints--list-buffer-overlays (current-buffer)))
+		  (x-ov (elhints--make-overlay-with-props
+				 9 12 (current-buffer)
+				 `(before-string .
+								 ,(propertize "elt:" 'face 'elhints-hint-face))
+				`(,elhints--overlay-kind . t)))
+		  (lst-ov (elhints--make-overlay-with-props
+				   11 15 (current-buffer)
+				   `(before-string .
+								   ,(propertize "list:" 'face 'elhints-hint-face))
+				   `(,elhints--overlay-kind . t))))
+	  (should (equal ov-list (list x-ov lst-ov))))))
+
+
+
 ;; Local Variables:
-;; read-symbol-shorthands: (("=-" . "elhints-"))
+;; read-symbol-shorthands: (("=-" . "elhints-") ("==-" . "elhints-test-"))
 ;; End:
 
 (provide 'elhints-test)
