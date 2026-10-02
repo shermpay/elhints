@@ -209,8 +209,9 @@ Returns t if the CALL-INFO node should render hints."
 	(and (>= (length arg-info-vec)
 			 elhints-display-min-num-args)
 		 (cl-loop for arg-info across arg-info-vec
-				  when (string-equal (=-arg-info-value-str arg-info)
-									 (=-arg-info-name-str arg-info))
+				  when (or (eq (=-arg-info-kind arg-info) 'rest)
+						   (string-equal (=-arg-info-value-str arg-info)
+										 (=-arg-info-name-str arg-info)))
 				  do (setf (=-arg-info-show arg-info) nil)
 				  finally return t))))
 
