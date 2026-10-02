@@ -126,12 +126,19 @@
 		))))
 
 (defun elhints--list-buffer-overlays (buffer)
+  "List elhints overlays in BUFFER."
   (with-current-buffer buffer
 	(let ((ov-list (car (overlay-lists))))
 	  (seq-filter (lambda (ov) (overlay-get ov elhints--overlay-kind))
 				  ov-list))))
 
 (defun elhints--make-overlay-with-props (beg end buffer &rest props)
+  "Returns an overlay with properties specified by PROPS.
+
+BEG, END and BUFFER are the same as `make-overlay'.
+
+PROPS is a list of pairs specifying the various overlay properties to call
+`overlay-put` on."
   (let ((ov (make-overlay beg end buffer)))
 	(dolist (prop-pair props)
 	  (overlay-put ov (car prop-pair) (cdr prop-pair)))
@@ -154,6 +161,7 @@
 		(when (and arg-name (<= start arg-pos end))
 		  (=--make-overlay-with-props arg-pos (+ arg-pos (length arg-name)) buffer
 									  `(before-string . ,(propertize (concat arg-name ":") 'face 'elhints-hint-face))
+									  `(evaporate . t)
 									  `(,=--overlay-kind . t)))))))
 
 ;;; Treesitter Grammar installation
