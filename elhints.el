@@ -1,8 +1,5 @@
 ;;; elhints.el --- Provide hints in Emacs Lisp files  -*- lexical-binding: t; -*-
 
-;;; Commentary:
-;; 
-;;
 ;; Copyright 2026 Sherman Pay
 ;;
 ;; Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +13,17 @@
 ;; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
+;;
+
+;; Author: Sherman Pay <shermanpay1991@gmail.com>
+;; Created: August 2026
+;; Version: 0.1
+;; Keywords: lisp
+;; URL: https://www.github.com/shermpay/elhints
+;; Package-Requires: ((emacs "30.1"))
+
+;;; Commentary:
+;;
 ;;
 
 ;;; Code:
@@ -179,11 +187,11 @@ PROPS is a list of pairs specifying the various overlay properties to call
 	(unless elhints-elisp-grammar-source-dir
 	  (user-error "elhints: Elisp grammar is not installed and custom variable elhints-elisp-grammar-source-dir is set to %s;  Set it to a valid directory containing tree-sitter elisp grammar"
 				  elhints-elisp-grammar-source-dir))
-    (add-to-list 'treesit-language-source-alist (cons 'elisp (list elhints-elisp-grammar-source-dir))))
+	(add-to-list 'treesit-language-source-alist (cons 'elisp (list elhints-elisp-grammar-source-dir))))
   (unless (treesit-language-available-p 'elisp)
-    (if (y-or-n-p "elhints: Package requires the Elisp tree-sitter grammar.  Install it now? ")
-        (treesit-install-language-grammar 'elisp)
-      (user-error "elhints: Elisp tree-sitter grammar is required"))))
+	(if (y-or-n-p "elhints: Package requires the Elisp tree-sitter grammar.  Install it now? ")
+		(treesit-install-language-grammar 'elisp)
+	  (user-error "elhints: Elisp tree-sitter grammar is required"))))
 
 ;;; Core
 (defgroup elhints nil
